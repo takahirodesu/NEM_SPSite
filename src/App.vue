@@ -1,11 +1,13 @@
 <template>
   <v-app>
-
     <v-app-bar color="primary" dark app clipped-left>
       <v-toolbar-title>
-        <router-link to="/" class="toolbar__top v-toolbar__content">NEM Authn Prototype</router-link>
+        <router-link to="/" class="toolbar__top v-toolbar__content"
+          >NEM Authn Prototype</router-link
+        >
       </v-toolbar-title>
       <v-spacer></v-spacer>
+      <v-btn text to="/">Home</v-btn>
       <v-btn text v-if="!$auth.isAuthenticated" @click="login">Log in</v-btn>
       <v-btn text v-if="$auth.isAuthenticated" @click="logout">Log out</v-btn>
       <v-btn text to="/signup">SignUp</v-btn>
@@ -14,36 +16,94 @@
 
     <v-main>
       <v-container fluid>
-        <router-view />
+        <loading v-show="loading" />
+        <router-view v-show="!loading" v-bind:data="oaMosaics" />
+
       </v-container>
       <v-footer app>
-        <div>ツイベガ君 & みやとも</div>
+        <div style="margin: 0 auto">ツイベガ君 & みやとも</div>
       </v-footer>
     </v-main>
-
-
   </v-app>
-
 </template>
 
 <script>
+import Loading from "./components/container/Loading.vue";
+
 export default {
-  data(){
-    return{
-      drawer: null
+  data() {
+    return {
+      drawer: null,
+      loading: false,
+      oaMosaics: [],
+    };
+  },
+
+  watch: {
+    "$auth.user": {
+      immediate: true,
+      handler: async function (val) {
+        if (val && this.$auth.isAuthenticated) {
+          this.loading = true;
+          const gotMosaics = [];
+          const promises = [];
+          try {
+            const namespaces = await this.$nem.getOwnedMosaics(
+              this.$auth.user.nickname
+            );
+            console.log(namespaces);
+            for (const ns of namespaces) {
+              if (!gotMosaics.includes(ns.mosaicId.namespaceId)) {
+                gotMosaics.push(ns.mosaicId.namespaceId);
+                promises.push(
+                  this.$nem.getMosaicDetail(ns.mosaicId.namespaceId)
+                );
+              }
+            }
+
+            let mosaics = await Promise.all(promises);
+            mosaics = mosaics
+              .flat(2)
+              .filter((i) => i.imageUrl && i.imageUrl !== "")
+              .map((i) => ({
+                imageUrl: i.imageUrl,
+                name: i.mosaic.id.name,
+                namespaceId: i.mosaic.id.namespaceId,
+              }));
+            console.log(mosaics);
+            this.oaMosaics = namespaces.map((n) => {
+              const tmp = mosaics.find(
+                (m) =>
+                  m.name === n.mosaicId.name &&
+                  m.namespaceId === n.mosaicId.namespaceId
+              );
+              return { quantity: n.quantity, ...tmp };
+            }).filter(i => i.imageUrl);
+          } catch (e) {
+            throw new Error(e);
+          } finally {
+            this.loading = false;
+          }
+        }
+      },
     }
   },
+
   methods: {
     login() {
       this.$auth.loginWithRedirect();
     },
     logout() {
       this.$auth.logout({
-        returnTo: window.location.origin + '/' + window.location.pathname.split('/')[1]
+        returnTo:
+          window.location.origin + "/" + window.location.pathname.split("/")[1],
       });
-    }
-  }
-}
+    },
+  },
+  components: {
+    Loading,
+  },
+};
 </script>
 
 <style>
@@ -71,6 +131,4 @@ export default {
 #nav a.router-link-exact-active {
   color: #42b983;
 }
-
-
 </style>
